@@ -7,6 +7,7 @@ import QRCode from 'qrcode'
 import { MAX_BYTES_PER_QR, QR_VERSION, QR_ERROR_CORRECTION, QR_BOX_SIZE, QR_BORDER } from './constants'
 import type { ChunkInfo, EncodeConfig, EncodeResult, ProgressCallback } from './types'
 import { generateA4Pdf } from './pdf-generate'
+import { md5 } from './md5'
 
 /** Split raw bytes into chunks of at most `chunkSize` bytes. */
 export function splitIntoChunks(data: Uint8Array, chunkSize: number = MAX_BYTES_PER_QR): Uint8Array[] {
@@ -26,6 +27,11 @@ export function makeChunkInfos(chunks: Uint8Array[]): ChunkInfo[] {
     size: chunk.length,
     data: chunk,
   }))
+}
+
+/** Compute MD5 hash of file data (synchronous using pure JS). */
+function computeMD5(data: Uint8Array): string {
+  return md5(data)
 }
 
 /**
@@ -62,6 +68,9 @@ export async function runEncode(
 
   onProgress?.(0, total, 'Generating QR codes...')
 
+  // Compute MD5 hash of the original file for metadata
+  const fileHash = computeMD5(config.fileData)
+
   const qrDataUrls: string[] = []
   for (const chunk of chunkInfos) {
     const dataUrl = await generateQrDataUrl(chunk.data)
@@ -77,6 +86,9 @@ export async function runEncode(
       title: resolvedTitle,
       showDate: config.showDate,
       highDensity: config.highDensity,
+      fileName: config.fileName,
+      fileHash,
+      description: config.description,
     })
   }
 

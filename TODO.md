@@ -1,0 +1,7 @@
+- [ ] remove header title on top
+- [ ] add space befor horizontal bar
+- [ ] Different header qr-code for first page and others (?)
+- [ ] Add page number to header qr code (so that not ordered scans work)
+- [ ] In decoding: check checksum
+- [ ] Add A5 and A6 options
+- [ ] Add option margin left-rigth for ring bind

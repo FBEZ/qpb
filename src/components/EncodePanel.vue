@@ -11,6 +11,7 @@ const highDensity = ref(false)
 const customTitle = ref('')
 const useCustomTitle = ref(false)
 const showDate = ref(true)
+const description = ref('')
 const encoding = ref(false)
 const progress = ref({ current: 0, total: 0, message: '' })
 const result = ref<EncodeResult | null>(null)
@@ -60,15 +61,16 @@ async function encode() {
 
   try {
     const fileData = new Uint8Array(await file.value.arrayBuffer())
-    const encodeResult = await runEncode(
-      {
-        fileData,
-        fileName: file.value.name,
-        a4: generatePdf.value,
-        highDensity: highDensity.value,
-        title: resolvedTitle.value,
-        showDate: showDate.value,
-      },
+      const encodeResult = await runEncode(
+        {
+          fileData,
+          fileName: file.value.name,
+          a4: generatePdf.value,
+          highDensity: highDensity.value,
+          title: resolvedTitle.value,
+          showDate: showDate.value,
+          description: description.value,
+        },
       (current, total, message) => {
         progress.value = { current, total, message: message || '' }
       },
@@ -195,6 +197,17 @@ function formatBytes(bytes: number): string {
           />
           <span class="text-sm text-gray-700">Show date in header</span>
         </label>
+
+        <!-- Description -->
+        <div v-if="generatePdf" class="ml-6 mt-2 space-y-2">
+          <label class="block text-sm text-gray-700">Short description</label>
+          <textarea
+            v-model="description"
+            rows="2"
+            placeholder="Optional description"
+            class="block w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:ring-blue-500 focus:border-blue-500"
+          ></textarea>
+        </div>
       </div>
     </div>
 

@@ -16,6 +16,8 @@ export interface EncodeConfig {
   title: string | null
   /** Whether to show the date in the PDF header. */
   showDate: boolean
+  /** Optional short description shown in PDF header below filename. */
+  description?: string
 }
 
 /** Metadata about a single data chunk. */
