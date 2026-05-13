@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" width="128" alt="qpb logo">
+</p>
+
 # qpb - QR Code Paper Backup
 
 Encode any file into printable QR codes and decode them back. All processing happens client-side -- no data leaves your browser.
