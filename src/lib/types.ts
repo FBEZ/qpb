@@ -12,11 +12,7 @@ export interface EncodeConfig {
   a4: boolean
   /** Use high-density grid (5x6 = 30/page) instead of default (4x5 = 20/page). */
   highDensity: boolean
-  /** Custom PDF title. null = use filename, empty string = no title. */
-  title: string | null
-  /** Whether to show the date in the PDF header. */
-  showDate: boolean
-  /** Optional short description shown in PDF header below filename. */
+  /** Optional short description shown in header below filename. */
   description?: string
 }
 

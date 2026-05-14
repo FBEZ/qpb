@@ -81,10 +81,7 @@ export async function runEncode(
   let pdfBlob: Blob | undefined
   if (config.a4) {
     onProgress?.(total, total, 'Generating PDF...')
-    const resolvedTitle = config.title === null ? config.fileName : config.title
     pdfBlob = await generateA4Pdf(qrDataUrls, {
-      title: resolvedTitle,
-      showDate: config.showDate,
       highDensity: config.highDensity,
       fileName: config.fileName,
       fileHash,

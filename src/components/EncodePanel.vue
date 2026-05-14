@@ -10,7 +10,6 @@ const generatePdf = ref(true)
 const highDensity = ref(false)
 const customTitle = ref('')
 const useCustomTitle = ref(false)
-const showDate = ref(true)
 const description = ref('')
 const encoding = ref(false)
 const progress = ref({ current: 0, total: 0, message: '' })
@@ -21,11 +20,6 @@ const error = ref<string | null>(null)
 const estimatedCodes = computed(() => {
   if (!file.value) return 0
   return Math.ceil(file.value.size / MAX_BYTES_PER_QR)
-})
-
-const resolvedTitle = computed(() => {
-  if (!useCustomTitle.value) return null // use filename
-  return customTitle.value // could be empty = no title
 })
 
 // File selection
@@ -67,8 +61,6 @@ async function encode() {
           fileName: file.value.name,
           a4: generatePdf.value,
           highDensity: highDensity.value,
-          title: resolvedTitle.value,
-          showDate: showDate.value,
           description: description.value,
         },
       (current, total, message) => {
@@ -187,16 +179,6 @@ function formatBytes(bytes: number): string {
             class="ml-6 block w-64 text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
-
-        <!-- Date -->
-        <label v-if="generatePdf" class="flex items-center gap-2 ml-6">
-          <input
-            v-model="showDate"
-            type="checkbox"
-            class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-          />
-          <span class="text-sm text-gray-700">Show date in header</span>
-        </label>
 
         <!-- Description -->
         <div v-if="generatePdf" class="ml-6 mt-2 space-y-2">
