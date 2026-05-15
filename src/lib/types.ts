@@ -30,10 +30,17 @@ export interface ChunkInfo {
 
 /** A decoded QR code with its position info. */
 export interface DecodedQr {
-  /** Raw payload bytes (after base64 decode). */
   data: Uint8Array
-  /** Bounding rectangle from the scanner. */
   rect: { x: number; y: number; width: number; height: number }
+}
+
+/** Header metadata from the PDF's meta QR code. */
+export interface PdfHeaderMeta {
+  filename: string
+  page: string // format "1/15"
+  totalPages: number
+  hash: string
+  version: string
 }
 
 /** Result of an encode operation. */

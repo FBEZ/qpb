@@ -2,16 +2,28 @@
 import { ref, computed } from 'vue'
 import { runDecode } from '../lib/decode'
 import { SUPPORTED_IMAGE_EXTS } from '../lib/constants'
+import { md5 } from '../lib/md5'
 
 // State
 const files = ref<File[]>([])
 const outputFileName = ref('')
 const decoding = ref(false)
 const progress = ref({ current: 0, total: 0, message: '' })
-const result = ref<{ data: Uint8Array; numChunks: number } | null>(null)
+const result = ref<{ data: Uint8Array; numChunks: number; header?: { filename: string } } | null>(null)
 const error = ref<string | null>(null)
+const headerInfo = ref<{ filename: string; hash: string; totalPages: number; version: string } | null>(null)
 
 // Computed
+const computedHash = computed(() => {
+  if (!result.value?.data) return null
+  return md5(result.value.data)
+})
+
+const hashMatch = computed(() => {
+  if (!headerInfo.value || !computedHash.value) return null
+  return computedHash.value === headerInfo.value.hash
+})
+
 const inputDescription = computed(() => {
   if (files.value.length === 0) return ''
   if (files.value.length === 1) {
@@ -77,6 +89,21 @@ async function decode() {
       },
     )
     result.value = decodeResult
+
+    console.log('Decode result:', decodeResult)
+
+    // Use filename from header if available
+    if (decodeResult.header) {
+      outputFileName.value = decodeResult.header.filename
+      headerInfo.value = {
+        filename: decodeResult.header.filename,
+        hash: decodeResult.header.hash,
+        totalPages: decodeResult.header.totalPages,
+        version: decodeResult.header.version,
+      }
+    } else {
+      console.log('No header found in decode result')
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -91,7 +118,7 @@ function download() {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = outputFileName.value || 'decoded_output'
+  a.download = outputFileName.value || 'decoded_file'
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -145,15 +172,48 @@ function formatBytes(bytes: number): string {
     <!-- Output filename -->
     <div class="bg-white rounded-lg border border-gray-200 p-4 space-y-2">
       <label class="block text-sm font-medium text-gray-700">Output filename</label>
-      <input
-        v-model="outputFileName"
-        type="text"
-        placeholder="decoded_output"
-        class="block w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:ring-blue-500 focus:border-blue-500"
-      />
-      <p class="text-xs text-gray-400">
-        The name for the reconstructed file when you download it.
-      </p>
+      <div v-if="result" class="text-sm font-mono text-gray-800 bg-gray-100 px-3 py-1.5 rounded">
+        {{ outputFileName }}
+      </div>
+      <div v-else class="text-sm text-gray-400 italic">
+        Decode to see output filename
+      </div>
+    </div>
+
+    <!-- Header info table -->
+    <div v-if="result" class="bg-white rounded-lg border border-gray-200 p-4">
+      <label class="block text-sm font-medium text-gray-700 mb-2">PDF Header QR Data</label>
+      <div v-if="headerInfo">
+        <table class="w-full text-sm">
+          <tbody>
+            <tr class="border-b">
+              <td class="py-1 text-gray-500">Filename</td>
+              <td class="py-1 font-mono text-gray-800">{{ headerInfo.filename }}</td>
+            </tr>
+            <tr class="border-b">
+              <td class="py-1 text-gray-500">Pages</td>
+              <td class="py-1 text-gray-800">{{ headerInfo.totalPages }}</td>
+            </tr>
+            <tr class="border-b">
+              <td class="py-1 text-gray-500">Header Hash (MD5)</td>
+              <td class="py-1 font-mono text-gray-800 text-xs">{{ headerInfo.hash }}</td>
+            </tr>
+            <tr class="border-b">
+              <td class="py-1 text-gray-500">Computed Hash</td>
+              <td class="py-1 font-mono text-gray-800 text-xs">{{ computedHash }}</td>
+            </tr>
+            <tr>
+              <td class="py-1 text-gray-500">Hash Match</td>
+              <td class="py-1 font-bold" :class="hashMatch ? 'text-green-600' : 'text-red-600'">
+                {{ hashMatch === null ? 'N/A' : hashMatch ? '✓ MATCH' : '✗ MISMATCH' }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-else class="text-sm text-red-600 bg-red-50 p-3 rounded">
+        ⚠️ No header QR code found in PDF. The header QR might be corrupted or encoded differently.
+      </div>
     </div>
 
     <!-- Decode button -->
