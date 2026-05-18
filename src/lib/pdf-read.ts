@@ -9,7 +9,7 @@ import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { scanImageData, type ZBarSymbol } from '@undecaf/zbar-wasm'
 import { PDF_DECODE_DPI_LEVELS } from './constants'
 import { toGrayscale, applyThreshold, sharpen, resize } from './image-utils'
-import type { DecodedQr, ProgressCallback } from './types'
+import type { DecodedQr, ProgressCallback, PdfHeaderMeta } from './types'
 
 // Configure pdf.js worker — use Vite's ?url import so the worker
 // file is properly resolved both in dev and production builds.
@@ -63,23 +63,48 @@ function sortByPosition(decoded: DecodedQr[]): DecodedQr[] {
   return ordered
 }
 
-/** Convert zbar symbols to DecodedQr objects. */
-function symbolsToDecoded(symbols: ZBarSymbol[]): DecodedQr[] {
-  return symbols.map(s => {
-    const points = s.points
-    const xs = points.map(p => p.x)
-    const ys = points.map(p => p.y)
+/** Sort raw payloads by position (top-to-bottom, left-to-right). */
+function sortByPositionRaw(
+  payloads: string[],
+  rects: { x: number; y: number; width: number; height: number }[],
+): { payloads: string[]; rects: { x: number; y: number; width: number; height: number }[] } {
+  if (payloads.length === 0) return { payloads, rects }
 
-    return {
-      data: base64ToUint8Array(s.decode()),
-      rect: {
-        x: Math.min(...xs),
-        y: Math.min(...ys),
-        width: Math.max(...xs) - Math.min(...xs),
-        height: Math.max(...ys) - Math.min(...ys),
-      },
+  const avgHeight = rects.reduce((sum, r) => sum + r.height, 0) / rects.length
+  const rowTolerance = Math.max(20, Math.floor(avgHeight * 0.3))
+
+  // Create indexed entries
+  const indexed = payloads.map((p, i) => ({ payload: p, rect: rects[i], idx: i }))
+
+  // Sort by y first, then x
+  indexed.sort((a, b) => {
+    if (Math.abs(a.rect.y - b.rect.y) > rowTolerance) {
+      return a.rect.y - b.rect.y
     }
+    return a.rect.x - b.rect.x
   })
+
+  // Group into rows
+  const rows: typeof indexed[] = []
+  for (const entry of indexed) {
+    if (rows.length > 0 && Math.abs(entry.rect.y - rows[rows.length - 1][0].rect.y) < rowTolerance) {
+      rows[rows.length - 1].push(entry)
+    } else {
+      rows.push([entry])
+    }
+  }
+
+  // Sort within rows by x
+  const sorted: typeof indexed = []
+  for (const row of rows) {
+    row.sort((a, b) => a.rect.x - b.rect.x)
+    sorted.push(...row)
+  }
+
+  return {
+    payloads: sorted.map(s => s.payload),
+    rects: sorted.map(s => s.rect),
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -194,42 +219,59 @@ async function scanImageMultipass(imageData: ImageData): Promise<Map<string, Dec
 
 /**
  * Decode all QR codes from a PDF page.
- * Strategy 1: Render at escalating DPIs (for digital PDFs).
- * Strategy 2: Extract embedded images + multi-pass (for scanned PDFs).
+ * Returns raw symbols (not yet base64-decoded) to allow header detection.
  */
-async function decodePage(
+async function decodePageRaw(
   page: pdfjsLib.PDFPageProxy,
-): Promise<Uint8Array[]> {
-  // --- Strategy 1: render the page ---
-  let bestRendered: Uint8Array[] = []
+): Promise<{ rawPayloads: string[]; rects: { x: number; y: number; width: number; height: number }[] }> {
+  let bestRaw: string[] = []
+  let bestRects: { x: number; y: number; width: number; height: number }[] = []
+
   for (const dpi of PDF_DECODE_DPI_LEVELS) {
     const imageData = await renderPage(page, dpi)
     const symbols = await scanQrCodes(imageData)
-    const decoded = symbolsToDecoded(symbols)
-    const ordered = sortByPosition(decoded)
-    const chunks = ordered.map(d => d.data)
 
-    if (chunks.length > bestRendered.length) {
-      bestRendered = chunks
+    const rects: { x: number; y: number; width: number; height: number }[] = []
+    const rawPayloads: string[] = []
+    for (const s of symbols) {
+      const points = s.points
+      const xs = points.map(p => p.x)
+      const ys = points.map(p => p.y)
+      rects.push({
+        x: Math.min(...xs),
+        y: Math.min(...ys),
+        width: Math.max(...xs) - Math.min(...xs),
+        height: Math.max(...ys) - Math.min(...ys),
+      })
+      rawPayloads.push(s.decode())
+    }
+
+    if (rawPayloads.length > bestRaw.length) {
+      bestRaw = rawPayloads
+      bestRects = rects
     } else {
-      break // No improvement, stop escalating
+      break
     }
   }
-  if (bestRendered.length > 0) {
-    return bestRendered
+
+  if (bestRaw.length > 0) {
+    // Sort by position: top-to-bottom, then left-to-right
+    const sorted = sortByPositionRaw(bestRaw, bestRects)
+    return { rawPayloads: sorted.payloads, rects: sorted.rects }
   }
 
-  // --- Strategy 2: render at high DPI + multi-pass preprocessing ---
-  // For scanned PDFs, rendering at the highest DPI and applying
-  // preprocessing is more effective
+  // Strategy 2: high DPI + multi-pass
   const highDpiImage = await renderPage(page, 600)
   const found = await scanImageMultipass(highDpiImage)
   if (found.size === 0) {
-    return []
+    return { rawPayloads: [], rects: [] }
   }
 
   const ordered = sortByPosition(Array.from(found.values()))
-  return ordered.map(d => d.data)
+  return {
+    rawPayloads: ordered.map(d => new TextDecoder().decode(d.data)),
+    rects: ordered.map(d => d.rect),
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -243,23 +285,72 @@ async function decodePage(
 export async function decodePdf(
   pdfData: Uint8Array,
   onProgress?: ProgressCallback,
-): Promise<Uint8Array[]> {
+): Promise<{ chunks: Uint8Array[]; header?: PdfHeaderMeta }> {
   const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise
   const numPages = pdf.numPages
+  let header: PdfHeaderMeta | undefined
   const allChunks: Uint8Array[] = []
 
   for (let pageNum = 1; pageNum <= numPages; pageNum++) {
     onProgress?.(pageNum - 1, numPages, `Decoding page ${pageNum}/${numPages}...`)
 
     const page = await pdf.getPage(pageNum)
-    const pageChunks = await decodePage(page)
+    const { rawPayloads } = await decodePageRaw(page)
 
-    if (pageChunks.length === 0) {
-      console.warn(`No QR codes found on page ${pageNum}`)
+    console.log('=== Page', pageNum, '=== Found', rawPayloads.length, 'QR codes')
+    if (pageNum === 1 && rawPayloads.length > 0) {
+      console.log('All payloads on page 1:')
+      rawPayloads.forEach((p, i) => console.log(`  [${i}]:`, p.substring(0, 80)))
     }
-    allChunks.push(...pageChunks)
+
+    // Try to find and remove header QR (check all pages, but only save from first)
+    for (let i = 0; i < rawPayloads.length; i++) {
+      const payload = rawPayloads[i]
+      try {
+        const parsed = JSON.parse(payload)
+        if (parsed['qbp-version']) {
+          console.log('Found header on page', pageNum)
+          if (!header && pageNum === 1) {
+            header = {
+              filename: parsed.filename,
+              page: parsed.page,
+              totalPages: parsed.page.split('/')[1] ? parseInt(parsed.page.split('/')[1]) : 1,
+              hash: parsed.hash,
+              version: parsed['qbp-version'],
+            }
+          }
+          rawPayloads.splice(i, 1)
+          break // Only remove one per page
+        }
+      } catch (e) {
+        // not JSON, try next
+      }
+    }
+
+    // Now base64-decode the remaining payloads
+    let skipped = 0
+    for (const payload of rawPayloads) {
+      try {
+        const chunk = base64ToUint8Array(payload)
+        allChunks.push(chunk)
+      } catch (e) {
+        skipped++
+      }
+    }
+    if (skipped > 0) {
+      console.log('!!! Skipped', skipped, 'invalid chunks on page', pageNum)
+    } else {
+      console.log('Page', pageNum, ':', rawPayloads.length, 'chunks OK')
+    }
   }
 
+  if (allChunks.length === 0) {
+    console.warn('No QR codes found in PDF')
+  }
+
+  // Count total sizes
+  const totalSize = allChunks.reduce((sum, c) => sum + c.length, 0)
+  console.log('=== FINAL: header found:', !!header, ', total chunks:', allChunks.length, ', total size:', totalSize)
   onProgress?.(numPages, numPages, `Done. Found ${allChunks.length} QR code(s) across ${numPages} page(s)`)
-  return allChunks
+  return { chunks: allChunks, header }
 }

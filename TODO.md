@@ -1,0 +1,10 @@
+- [X] remove header title on top
+- [X] add space befor horizontal bar
+- [ ] Different header qr-code for first page and others (?)
+- [X] Add page number to header qr code (so that not ordered scans work)
+- [ ] In decoding: check checksum
+- [ ] Add A5 and A6 options
+- [ ] Add option margin left-rigth for ring bind
+- [ ] Check decoding with header (recombination)
+- [ ] Continue cropped description in later pages (?)
+- [ ] Add  2mm top padding to description box

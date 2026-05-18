@@ -11,7 +11,10 @@ const activeTab = ref<'encode' | 'decode'>('encode')
     <!-- Header -->
     <header class="bg-white border-b border-gray-200">
       <div class="max-w-4xl mx-auto px-4 py-6">
-        <h1 class="text-2xl font-bold text-gray-900">QR Code Backup</h1>
+        <div class="flex items-center gap-3">
+          <img src="/logo.svg" alt="QPB logo" class="h-10 w-10" />
+          <h1 class="text-2xl font-bold text-gray-900">QPB - QR-Code Paper Backup</h1>
+        </div>
         <p class="mt-1 text-sm text-gray-500">
           Encode any file into printable QR codes, or decode them back.
         </p>

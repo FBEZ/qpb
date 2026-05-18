@@ -7,6 +7,7 @@ import QRCode from 'qrcode'
 import { MAX_BYTES_PER_QR, QR_VERSION, QR_ERROR_CORRECTION, QR_BOX_SIZE, QR_BORDER } from './constants'
 import type { ChunkInfo, EncodeConfig, EncodeResult, ProgressCallback } from './types'
 import { generateA4Pdf } from './pdf-generate'
+import { md5 } from './md5'
 
 /** Split raw bytes into chunks of at most `chunkSize` bytes. */
 export function splitIntoChunks(data: Uint8Array, chunkSize: number = MAX_BYTES_PER_QR): Uint8Array[] {
@@ -26,6 +27,11 @@ export function makeChunkInfos(chunks: Uint8Array[]): ChunkInfo[] {
     size: chunk.length,
     data: chunk,
   }))
+}
+
+/** Compute MD5 hash of file data (synchronous using pure JS). */
+function computeMD5(data: Uint8Array): string {
+  return md5(data)
 }
 
 /**
@@ -62,6 +68,9 @@ export async function runEncode(
 
   onProgress?.(0, total, 'Generating QR codes...')
 
+  // Compute MD5 hash of the original file for metadata
+  const fileHash = computeMD5(config.fileData)
+
   const qrDataUrls: string[] = []
   for (const chunk of chunkInfos) {
     const dataUrl = await generateQrDataUrl(chunk.data)
@@ -72,11 +81,15 @@ export async function runEncode(
   let pdfBlob: Blob | undefined
   if (config.a4) {
     onProgress?.(total, total, 'Generating PDF...')
-    const resolvedTitle = config.title === null ? config.fileName : config.title
+    const fileImg = await fileDataToDataUrl(config.fileData, config.fileName)
     pdfBlob = await generateA4Pdf(qrDataUrls, {
-      title: resolvedTitle,
-      showDate: config.showDate,
       highDensity: config.highDensity,
+      fileName: config.fileName,
+      fileHash,
+      description: config.description,
+      fileDataUrl: fileImg?.url,
+      imageWidth: fileImg?.width,
+      imageHeight: fileImg?.height,
     })
   }
 
@@ -94,6 +107,42 @@ export async function runEncode(
 
 /** Convert Uint8Array to base64 string. */
 function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
+
+/** Convert file data to data URL if it's an image, otherwise return undefined. */
+async function fileDataToDataUrl(data: Uint8Array, fileName: string): Promise<{ url: string; width: number; height: number } | undefined> {
+  const IMAGE_EXTS = /\.(jpg|jpeg|png|webp)$/i
+  if (!IMAGE_EXTS.test(fileName)) return undefined
+
+  const ext = fileName.toLowerCase().match(/\.(jpg|jpeg|png|webp)$/)?.[1] || 'jpg'
+  const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
+  const base64 = uint8ArrayToDataURL(data)
+  const url = `data:${mimeType};base64,${base64}`
+
+  // Get image dimensions
+  const dims = await getImageDimensions(url)
+  return { url, ...dims }
+}
+
+function getImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight })
+    }
+    img.onerror = () => {
+      resolve({ width: 1, height: 1 })
+    }
+    img.src = dataUrl
+  })
+}
+
+function uint8ArrayToDataURL(bytes: Uint8Array): string {
   let binary = ''
   for (let i = 0; i < bytes.length; i++) {
     binary += String.fromCharCode(bytes[i])

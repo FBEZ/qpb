@@ -12,10 +12,8 @@ export interface EncodeConfig {
   a4: boolean
   /** Use high-density grid (5x6 = 30/page) instead of default (4x5 = 20/page). */
   highDensity: boolean
-  /** Custom PDF title. null = use filename, empty string = no title. */
-  title: string | null
-  /** Whether to show the date in the PDF header. */
-  showDate: boolean
+  /** Optional short description shown in header below filename. */
+  description?: string
 }
 
 /** Metadata about a single data chunk. */
@@ -32,10 +30,17 @@ export interface ChunkInfo {
 
 /** A decoded QR code with its position info. */
 export interface DecodedQr {
-  /** Raw payload bytes (after base64 decode). */
   data: Uint8Array
-  /** Bounding rectangle from the scanner. */
   rect: { x: number; y: number; width: number; height: number }
+}
+
+/** Header metadata from the PDF's meta QR code. */
+export interface PdfHeaderMeta {
+  filename: string
+  page: string // format "1/15"
+  totalPages: number
+  hash: string
+  version: string
 }
 
 /** Result of an encode operation. */

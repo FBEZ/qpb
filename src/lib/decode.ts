@@ -8,7 +8,7 @@ import { scanImageData, type ZBarSymbol } from '@undecaf/zbar-wasm'
 import { SUPPORTED_IMAGE_EXTS } from './constants'
 import { loadImage, imageToImageData, toGrayscale, applyThreshold, sharpen, resize } from './image-utils'
 import { decodePdf } from './pdf-read'
-import type { DecodedQr, ProgressCallback } from './types'
+import type { DecodedQr, ProgressCallback, PdfHeaderMeta } from './types'
 
 // ---------------------------------------------------------------------------
 // Core scanning
@@ -304,19 +304,23 @@ function classifyInput(files: File[]): 'qr-images' | 'pdf' | 'single-image' {
 export async function runDecode(
   files: File[],
   onProgress?: ProgressCallback,
-): Promise<{ data: Uint8Array; numChunks: number }> {
+): Promise<{ data: Uint8Array; numChunks: number; header?: PdfHeaderMeta }> {
   if (files.length === 0) {
     throw new Error('No files provided')
   }
 
   const inputType = classifyInput(files)
   let chunks: Uint8Array[]
+  let header: PdfHeaderMeta | undefined
 
   switch (inputType) {
     case 'pdf': {
       onProgress?.(0, 1, `Decoding PDF: ${files[0].name}`)
       const arrayBuffer = await files[0].arrayBuffer()
-      chunks = await decodePdf(new Uint8Array(arrayBuffer), onProgress)
+      const result = await decodePdf(new Uint8Array(arrayBuffer), onProgress)
+      console.log('PDF decode result:', result)
+      chunks = result.chunks
+      header = result.header
       break
     }
 
@@ -349,7 +353,7 @@ export async function runDecode(
     offset += chunk.length
   }
 
-  return { data: assembled, numChunks: chunks.length }
+  return { data: assembled, numChunks: chunks.length, header }
 }
 
 // ---------------------------------------------------------------------------
