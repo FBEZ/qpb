@@ -291,25 +291,22 @@ export async function decodePdf(
   let header: PdfHeaderMeta | undefined
   const allChunks: Uint8Array[] = []
 
+  // Collect chunks per page, along with page number from header
+  const pageChunks: { pageNum: number; chunks: Uint8Array[] }[] = []
+
   for (let pageNum = 1; pageNum <= numPages; pageNum++) {
     onProgress?.(pageNum - 1, numPages, `Decoding page ${pageNum}/${numPages}...`)
 
     const page = await pdf.getPage(pageNum)
     const { rawPayloads } = await decodePageRaw(page)
 
-    console.log('=== Page', pageNum, '=== Found', rawPayloads.length, 'QR codes')
-    if (pageNum === 1 && rawPayloads.length > 0) {
-      console.log('All payloads on page 1:')
-      rawPayloads.forEach((p, i) => console.log(`  [${i}]:`, p.substring(0, 80)))
-    }
-
-    // Try to find and remove header QR (check all pages, but only save from first)
+    // Extract page number from header QR (if present)
+    let extractedPageNum = pageNum
     for (let i = 0; i < rawPayloads.length; i++) {
       const payload = rawPayloads[i]
       try {
         const parsed = JSON.parse(payload)
         if (parsed['qbp-version']) {
-          console.log('Found header on page', pageNum)
           if (!header && pageNum === 1) {
             header = {
               filename: parsed.filename,
@@ -319,29 +316,34 @@ export async function decodePdf(
               version: parsed['qbp-version'],
             }
           }
+          // Extract page number from the header
+          const [current] = parsed.page.split('/').map(Number)
+          extractedPageNum = current
+          console.log('Page', pageNum, 'has header, extracted page number:', extractedPageNum)
           rawPayloads.splice(i, 1)
-          break // Only remove one per page
+          break
         }
-      } catch (e) {
-        // not JSON, try next
-      }
+      } catch (e) {}
     }
 
-    // Now base64-decode the remaining payloads
-    let skipped = 0
+    // Base64-decode remaining payloads
+    const chunks: Uint8Array[] = []
     for (const payload of rawPayloads) {
       try {
-        const chunk = base64ToUint8Array(payload)
-        allChunks.push(chunk)
-      } catch (e) {
-        skipped++
-      }
+        chunks.push(base64ToUint8Array(payload))
+      } catch (e) {}
     }
-    if (skipped > 0) {
-      console.log('!!! Skipped', skipped, 'invalid chunks on page', pageNum)
-    } else {
-      console.log('Page', pageNum, ':', rawPayloads.length, 'chunks OK')
-    }
+
+    pageChunks.push({ pageNum: extractedPageNum, chunks })
+  }
+
+  // Sort pages by page number
+  pageChunks.sort((a, b) => a.pageNum - b.pageNum)
+  console.log('Page order after sorting:', pageChunks.map(p => p.pageNum).join(', '))
+
+  // Concatenate in sorted order
+  for (const pc of pageChunks) {
+    allChunks.push(...pc.chunks)
   }
 
   if (allChunks.length === 0) {

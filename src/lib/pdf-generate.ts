@@ -38,7 +38,7 @@ export async function generateA4Pdf(
   const pageW = ptToMm(A4_WIDTH)
   const pageH = ptToMm(A4_HEIGHT)
 
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true })
 
   const today = new Date().toISOString().split('T')[0]
 
@@ -174,7 +174,7 @@ export async function generateA4Pdf(
       const imgWidth = imgHeight * aspectRatio
       const imgX = pageW - margin - imgWidth // right-aligned, symmetrical to QR code
       const imgY = metaTop
-      doc.addImage(fileDataUrl, 'JPEG', imgX, imgY, imgWidth, imgHeight)
+      doc.addImage(fileDataUrl, 'JPEG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST')
     }
 
     // Separator line after metadata block
@@ -190,7 +190,7 @@ export async function generateA4Pdf(
         if (idx >= total) break
         const x = margin + col * (cellW + spacing)
         const y = gridStartY + row * cellH
-        doc.addImage(qrDataUrls[idx], 'JPEG', x, y, cellW, cellW)
+        doc.addImage(qrDataUrls[idx], 'JPEG', x, y, cellW, cellW, undefined, 'FAST')
         idx++
       }
       if (idx >= total) break

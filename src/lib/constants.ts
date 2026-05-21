@@ -22,7 +22,7 @@ export const QR_BYTE_CAPACITY = 2_953
 export const MAX_BYTES_PER_QR = Math.floor(QR_BYTE_CAPACITY / 4) * 3 // 2214
 
 /** Pixel size per QR module (box). */
-export const QR_BOX_SIZE = 10
+export const QR_BOX_SIZE = 6
 
 /** QR quiet zone in modules. */
 export const QR_BORDER = 4
