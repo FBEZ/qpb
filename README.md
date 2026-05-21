@@ -30,3 +30,8 @@ npm run preview
 ```
 
 The production build is output to `dist/`.
+
+## Todo
+
+- [ ] Try scan at 600x600 dpi. 
+
