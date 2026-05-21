@@ -43,16 +43,16 @@ export async function generateQrDataUrl(data: Uint8Array): Promise<string> {
   // Convert Uint8Array to base64 string
   const base64 = uint8ArrayToBase64(data)
 
-  const dataUrl = await QRCode.toDataURL(base64, {
-    version: QR_VERSION,
-    errorCorrectionLevel: QR_ERROR_CORRECTION,
-    margin: QR_BORDER,
-    scale: QR_BOX_SIZE,
-    type: 'image/jpeg',
-    rendererOpts: {
-      quality: 0.92,
-    },
-  })
+const dataUrl = await QRCode.toDataURL(base64, {
+      version: QR_VERSION,
+      errorCorrectionLevel: QR_ERROR_CORRECTION,
+      margin: QR_BORDER,
+      scale: QR_BOX_SIZE,
+      type: 'image/jpeg',
+      rendererOpts: {
+        quality: 0.1,
+      },
+    })
 
   return dataUrl
 }
@@ -114,7 +114,7 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-/** Convert file data to data URL if it's an image, otherwise return undefined. */
+/** Convert file data to grayscale data URL if it's an image, otherwise return undefined. */
 async function fileDataToDataUrl(data: Uint8Array, fileName: string): Promise<{ url: string; width: number; height: number } | undefined> {
   const IMAGE_EXTS = /\.(jpg|jpeg|png|webp)$/i
   if (!IMAGE_EXTS.test(fileName)) return undefined
@@ -122,21 +122,37 @@ async function fileDataToDataUrl(data: Uint8Array, fileName: string): Promise<{ 
   const ext = fileName.toLowerCase().match(/\.(jpg|jpeg|png|webp)$/)?.[1] || 'jpg'
   const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
   const base64 = uint8ArrayToDataURL(data)
-  const url = `data:${mimeType};base64,${base64}`
+  const originalUrl = `data:${mimeType};base64,${base64}`
 
-  // Get image dimensions
-  const dims = await getImageDimensions(url)
-  return { url, ...dims }
+  // Convert to grayscale and get dimensions
+  const { url, width, height } = await convertToGrayscale(originalUrl)
+  return { url, width, height }
 }
 
-function getImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
+async function convertToGrayscale(dataUrl: string): Promise<{ url: string; width: number; height: number }> {
   return new Promise((resolve) => {
     const img = new Image()
     img.onload = () => {
-      resolve({ width: img.naturalWidth, height: img.naturalHeight })
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        resolve({ url: dataUrl, width: img.naturalWidth, height: img.naturalHeight })
+        return
+      }
+      ctx.drawImage(img, 0, 0)
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      const data = imageData.data
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = data[i] * 0.3 + data[i + 1] * 0.59 + data[i + 2] * 0.11
+        data[i] = data[i + 1] = data[i + 2] = gray
+      }
+      ctx.putImageData(imageData, 0, 0)
+      resolve({ url: canvas.toDataURL('image/jpeg', 0.3), width: img.naturalWidth, height: img.naturalHeight })
     }
     img.onerror = () => {
-      resolve({ width: 1, height: 1 })
+      resolve({ url: dataUrl, width: 1, height: 1 })
     }
     img.src = dataUrl
   })
